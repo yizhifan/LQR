@@ -2,6 +2,7 @@ from numpy import *
 from math import *
 import matplotlib.pyplot as plt
 import scipy.linalg as la
+from scipy.io import loadmat
 import time
 Kp = 1  # speed proportional gain
 dt = 0.1  # time tick[s]
@@ -13,31 +14,34 @@ Q[2, 2] = 18.3
 Q[3, 3] = 7.3
 R = 1
 max_steer = 45 * pi/180  # in rad
-target_v = 3.0 / 3.6  # in m/s
+target_v = -3.0 / 3.6  # in m/s
 
+route = loadmat('RouteA4.3L5+A4.3L5+L0.2.mat')
+route = route['Route']
 
-cx = linspace(0, 200, 2000)
-cy = zeros(len(cx))
-pd = zeros(len(cx))
-pdd = zeros(len(cx))
-ck = zeros(len(cx))
-cyaw = zeros(len(cx))
+cx = route[0]  # linspace(0, 200, 2000)
+cy = route[1]  # zeros(len(cx))
+# pd = zeros(len(cx))
+# pdd = zeros(len(cx))
+cyaw = route[2]  # zeros(len(cx))
+ck = route[3]  # zeros(len(cx))
+print(argwhere(cx == 0)[1])  # todo
 
 # reference route
-for i in range(len(cx)):
-    cy[i] = -sin(cx[i]/10) * cx[i]/8
-
-for i in range(len(cx)-1):
-    pd[i] = (cy[i+1]-cy[i])/(cx[i+1]-cx[i])
-
-for i in range(len(cx)-1):
-    pdd[i] = (cy[i+1]-2*cy[i] + cy[i-1])/(0.5 * (cx[i+1] - cx[i-1]))**2
-
-for i in range(len(cx)-1):
-    ck[i] = pdd[i]/((1+pd[i]**2)**1.5)
-
-for i in range(len(pd)):
-    cyaw[i] = atan(pd[i])
+# for i in range(len(cx)):
+#     cy[i] = -sin(cx[i]/10) * cx[i]/8
+#
+# for i in range(len(cx)-1):
+#     pd[i] = (cy[i+1]-cy[i])/(cx[i+1]-cx[i])
+#
+# for i in range(len(cx)-1):
+#     pdd[i] = (cy[i+1]-2*cy[i] + cy[i-1])/(0.5 * (cx[i+1] - cx[i-1]))**2
+#
+# for i in range(len(cx)-1):
+#     ck[i] = pdd[i]/((1+pd[i]**2)**1.5)
+#
+# for i in range(len(pd)):
+#     cyaw[i] = atan(pd[i])
 
 pe = 0
 pth_e = 0
