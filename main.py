@@ -12,8 +12,8 @@ Q[1, 1] = 0.01
 Q[2, 2] = 18.3
 Q[3, 3] = 7.3
 R = 1
-max_steer = 60 * pi/180  # in rad
-target_v = 10.0 / 3.6  # in kph
+max_steer = 45 * pi/180  # in rad
+target_v = 3.0 / 3.6  # in m/s
 
 
 cx = linspace(0, 200, 2000)
@@ -181,12 +181,12 @@ x_pos = zeros(len(cx))
 y_pos = zeros(len(cx))
 
 while ind < len(cx):
-    delta,ind, e, th_e = lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e)
+    delta, ind, e, th_e = lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e)
     pth_e = th_e
     pe = e
-    print('lateral error is ',e)
+    print('lateral error is ', e)
     v = state.v
-    print("v is",v)
+    print("v is", v)
     # print('Index is ', ind)
     if abs(e) > 4:
        print('too far from reference!\n')
