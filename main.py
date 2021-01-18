@@ -3,19 +3,23 @@ from math import *
 import matplotlib.pyplot as plt
 import scipy.linalg as la
 from scipy.io import loadmat
-import time
+import tensorflow as tf
+from sklearn.preprocessing import MinMaxScaler
+
+
 Kp = 1  # speed proportional gain
 dt = 0.01  # time tick[s]
-L = 2.9  # wheel base[m]
+L = 2.8  # wheel base[m]
 Q = eye(4)
 Q[0, 0] = 19.7
 Q[1, 1] = 0.01
 Q[2, 2] = 18.3
 Q[3, 3] = 7.3
 R = 1
-max_steer = 45 * pi/180  # in rad
-target_v = -3.0 / 3.6  # in m/s
+max_steer = 33.85 * pi/180  # in rad
+target_v = -2.0 / 3.6  # in m/s
 
+# reference route
 route = loadmat('RouteA4.3L5+A4.3L5+L0.2.mat')
 route = route['Route']
 
@@ -31,22 +35,6 @@ cy = cy[0:index_end]
 cyaw = cyaw[0:index_end]
 ck = ck[0:index_end]
 
-# reference route
-# for i in range(len(cx)):
-#     cy[i] = -sin(cx[i]/10) * cx[i]/8
-#
-# for i in range(len(cx)-1):
-#     pd[i] = (cy[i+1]-cy[i])/(cx[i+1]-cx[i])
-#
-# for i in range(len(cx)-1):
-#     pdd[i] = (cy[i+1]-2*cy[i] + cy[i-1])/(0.5 * (cx[i+1] - cx[i-1]))**2
-#
-# for i in range(len(cx)-1):
-#     ck[i] = pdd[i]/((1+pd[i]**2)**1.5)
-#
-# for i in range(len(pd)):
-#     cyaw[i] = atan(pd[i])
-
 pe = 0
 pth_e = 0
 i = 1
@@ -55,6 +43,8 @@ y = 0
 yaw = 0
 v = 0
 ind = 0
+lat_error = []
+yaw_error = []
 
 
 class State:
@@ -103,7 +93,7 @@ def solve_DARE(A, B, Q, R):
 
     for i in range(maxiter):
         Xn = A.T * X * A - A.T * X * B * la.pinv(R + B.T * X * B) * B.T * X * A + Q
-        if (abs(Xn - X)).max()  < eps:
+        if (abs(Xn - X)).max() < eps:
             X = Xn
             break
         X = Xn
@@ -179,12 +169,16 @@ def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
     return delta, ind, e, th_e
 
 
-state = State(x=0.0, y=0, yaw=0.0, v=0.0)
-x = state.x
-y = state.y
-yaw = state.yaw
-v = state.v
-i = 0
+# Initialize
+model = tf.keras.models.load_model('dynamic_model_EP21.h5')
+state = State(x=0.0, y=0.0, yaw=0.0, v=0.0)
+trgt_spd = 2 * ones((20, 1))
+shft_pos = 7 * ones((20, 1))
+trgt_acc = zeros((20, 1))
+steer_angle = zeros((20, 1))
+brake_prs = zeros((20, 1))
+veh_spd = zeros((20, 1))
+veh_yaw = zeros((20, 1))
 x_pos = []  # zeros(len(cx))
 y_pos = []  # zeros(len(cx))
 
@@ -192,6 +186,7 @@ while ind < len(cx):
     delta, ind, e, th_e = lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e)
     pth_e = th_e
     pe = e
+    lat_error.append(e)
     print('lateral error is ', e)
     v = state.v
     print("v is", v)
@@ -206,13 +201,7 @@ while ind < len(cx):
     y = state.y
     x_pos.append(x)
     y_pos.append(y)
-    # x_pos[i] = x
-    # y_pos[i] = y
-    # i = i + 1
-    dx_end = cx[-1] - x_pos[-1]
-    dy_end = cy[-1] - y_pos[-1]
-    final_error = abs(sqrt(dx_end**2 + dy_end**2))
-    if final_error < 0.1:
+    if abs(y_pos[-1]) > abs(cy[-1]):
         break
 plt.plot(cx, cy, "-b")
 
@@ -224,4 +213,7 @@ plt.axis("equal")
 plt.xlabel("x[m]")
 plt.ylabel("y[m]")
 plt.show()
-print(cyaw[0:20])
+
+for i in range(len(lat_error)):
+    plt.plot(lat_error, "-r")
+plt.show()
