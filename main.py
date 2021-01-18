@@ -161,7 +161,7 @@ def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
     x[2, 0] = th_e
     x[3, 0] = (th_e - pth_e) / dt
 
-    ff = atan(L * k)
+    ff = atan(L * k)  # front wheel angle
     fb = (-K * x)
     print(ff, fb)
     delta = 1*ff + 1 * fb
