@@ -5,7 +5,7 @@ import scipy.linalg as la
 from scipy.io import loadmat
 import time
 Kp = 1  # speed proportional gain
-dt = 0.1  # time tick[s]
+dt = 0.01  # time tick[s]
 L = 2.9  # wheel base[m]
 Q = eye(4)
 Q[0, 0] = 19.7
@@ -25,7 +25,11 @@ cy = route[1]  # zeros(len(cx))
 # pdd = zeros(len(cx))
 cyaw = route[2]  # zeros(len(cx))
 ck = route[3]  # zeros(len(cx))
-print(argwhere(cx == 0)[1])  # todo
+index_end = argwhere(cx == 0)[1][0]
+cx = cx[0:index_end]
+cy = cy[0:index_end]
+cyaw = cyaw[0:index_end]
+ck = ck[0:index_end]
 
 # reference route
 # for i in range(len(cx)):
@@ -47,7 +51,7 @@ pe = 0
 pth_e = 0
 i = 1
 x = 0
-y = -0.1
+y = 0
 yaw = 0
 v = 0
 ind = 0
@@ -175,14 +179,14 @@ def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
     return delta, ind, e, th_e
 
 
-state = State(x=0.0, y=-0.5, yaw=0.0, v=0.0)
+state = State(x=0.0, y=0, yaw=0.0, v=0.0)
 x = state.x
 y = state.y
 yaw = state.yaw
 v = state.v
 i = 0
-x_pos = zeros(len(cx))
-y_pos = zeros(len(cx))
+x_pos = []  # zeros(len(cx))
+y_pos = []  # zeros(len(cx))
 
 while ind < len(cx):
     delta, ind, e, th_e = lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e)
@@ -200,12 +204,17 @@ while ind < len(cx):
     state = update(state, a, delta)
     x = state.x
     y = state.y
-    x_pos[i] = x
-    y_pos[i] = y
-    i = i + 1
-
-
-plt.plot(cx, cy,"-b")
+    x_pos.append(x)
+    y_pos.append(y)
+    # x_pos[i] = x
+    # y_pos[i] = y
+    # i = i + 1
+    dx_end = cx[-1] - x_pos[-1]
+    dy_end = cy[-1] - y_pos[-1]
+    final_error = abs(sqrt(dx_end**2 + dy_end**2))
+    if final_error < 0.1:
+        break
+plt.plot(cx, cy, "-b")
 
 for i in range(len(x_pos)):
     plt.plot(x_pos[i], y_pos[i], ".r", markersize=1)
