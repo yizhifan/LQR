@@ -1,50 +1,30 @@
-from numpy import *
-from math import *
-import matplotlib.pyplot as plt
+"""
+
+Path tracking simulation with LQR steering control and PID speed control.
+
+author Atsushi Sakai (@Atsushi_twi)
+
+"""
 import scipy.linalg as la
 from scipy.io import loadmat
-import tensorflow as tf
-from sklearn.preprocessing import MinMaxScaler
+import matplotlib.pyplot as plt
+import math
+import numpy as np
 
 
-Kp = 1  # speed proportional gain
-dt = 0.01  # time tick[s]
-L = 2.8  # wheel base[m]
-Q = eye(4)
-Q[0, 0] = 19.7
-Q[1, 1] = 0.01
-Q[2, 2] = 18.3
-Q[3, 3] = 7.3
-R = 1
-max_steer = 33.85 * pi/180  # in rad
-target_v = -2.0 / 3.6  # in m/s
+Kp = 1.0  # speed proportional gain
 
-# reference route
-route = loadmat('RouteA4.3L5+A4.3L5+L0.2.mat')
-route = route['Route']
+# LQR parameter
+Q = np.eye(4)
+R = np.eye(1)
 
-cx = route[0]  # linspace(0, 200, 2000)
-cy = route[1]  # zeros(len(cx))
-# pd = zeros(len(cx))
-# pdd = zeros(len(cx))
-cyaw = route[2]  # zeros(len(cx))
-ck = route[3]  # zeros(len(cx))
-index_end = argwhere(cx == 0)[1][0]
-cx = cx[0:index_end]
-cy = cy[0:index_end]
-cyaw = cyaw[0:index_end]
-ck = ck[0:index_end]
+# parameters
+dt = 0.1  # time tick[s]
+L = 2.8  # Wheel base of the vehicle [m]
+max_steer = np.deg2rad(33.84)  # maximum steering angle[rad]
 
-pe = 0
-pth_e = 0
-i = 1
-x = 0
-y = 0
-yaw = 0
-v = 0
-ind = 0
-lat_error = []
-yaw_error = []
+show_animation = True
+#  show_animation = False
 
 
 class State:
@@ -57,13 +37,15 @@ class State:
 
 
 def update(state, a, delta):
+
     if delta >= max_steer:
         delta = max_steer
     if delta <= - max_steer:
         delta = - max_steer
-    state.x = state.x + state.v * cos(state.yaw) * dt
-    state.y = state.y + state.v * sin(state.yaw) * dt
-    state.yaw = state.yaw + state.v / L * tan(delta) * dt
+
+    state.x = state.x + state.v * math.cos(state.yaw) * dt
+    state.y = state.y + state.v * math.sin(state.yaw) * dt
+    state.yaw = state.yaw + state.v / L * math.tan(delta) * dt
     state.v = state.v + a * dt
 
     return state
@@ -71,16 +53,12 @@ def update(state, a, delta):
 
 def PIDControl(target, current):
     a = Kp * (target - current)
+
     return a
-#
-# def pi_2_pi(angle):  # the unit of angle is in rad;
-#     while (angle > pi):
-#         angle = angle - 2.0 * pi
-#
-#     while (angle < -pi):
-#         angle = angle + 2.0 * pi
-#
-#     return angle
+
+
+def pi_2_pi(angle):
+    return (angle + math.pi) % (2 * math.pi) - math.pi
 
 
 def solve_DARE(A, B, Q, R):
@@ -88,13 +66,13 @@ def solve_DARE(A, B, Q, R):
     solve a discrete time_Algebraic Riccati equation (DARE)
     """
     X = Q
-    maxiter = 500
+    maxiter = 150
     eps = 0.01
 
     for i in range(maxiter):
-        Xn = A.T * X * A - A.T * X * B * la.pinv(R + B.T * X * B) * B.T * X * A + Q
+        Xn = A.T @ X @ A - A.T @ X @ B @ \
+            la.inv(R + B.T @ X @ B) @ B.T @ X @ A + Q
         if (abs(Xn - X)).max() < eps:
-            X = Xn
             break
         X = Xn
 
@@ -112,36 +90,23 @@ def dlqr(A, B, Q, R):
     X = solve_DARE(A, B, Q, R)
 
     # compute the LQR gain
-    K = la.pinv(B.T * X * B + R) * (B.T * X * A)
+    K = la.inv(B.T @ X @ B + R) @ (B.T @ X @ A)
 
-    return K
+    eigVals, eigVecs = la.eig(A - B @ K)
 
-
-def calc_nearest_index(state, cx, cy):
-    dx = [state.x - icx for icx in cx]
-    dy = [state.y - icy for icy in cy]
-
-    d = [abs(sqrt(idx ** 2 + idy ** 2)) for (idx, idy) in zip(dx, dy)]
-
-    error = min(d)
-
-    ind = d.index(error)
-
-    dy = cy[ind] - state.y
-    if dy > 0:
-        error = -error
-
-    return ind, error
+    return K, X, eigVals
 
 
 def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
-    ind, e = calc_nearest_index(state, cx, cy)
-
+    ind, e = calc_nearest_index(state, cx, cy, cyaw)
+    ind += 1
+    if ind >= len(cx):
+        ind = len(cx) - 1
     k = ck[ind]
     v = state.v
-    th_e = (state.yaw - cyaw[ind])
+    th_e = pi_2_pi(state.yaw - cyaw[ind])
 
-    A = mat(zeros((4, 4)))
+    A = np.zeros((4, 4))
     A[0, 0] = 1.0
     A[0, 1] = dt
     A[1, 2] = v
@@ -149,71 +114,191 @@ def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
     A[2, 3] = dt
     # print(A)
 
-    B = mat(zeros((4, 1)))
+    B = np.zeros((4, 1))
     B[3, 0] = v / L
 
-    K = dlqr(A, B, Q, R)
-    print('K is', K)
-    x =mat(zeros((4, 1)))
+    K, _, _ = dlqr(A, B, Q, R)
+
+    x = np.zeros((4, 1))
 
     x[0, 0] = e
     x[1, 0] = (e - pe) / dt
     x[2, 0] = th_e
     x[3, 0] = (th_e - pth_e) / dt
 
-    ff = atan(L * k)  # front wheel angle
-    fb = (-K * x)
-    print(ff, fb)
-    delta = 1*ff + 1 * fb
-    print(delta)
+    ff = math.atan2(L * k, 1)
+    fb = pi_2_pi((-K @ x)[0, 0])
+
+    delta = ff + fb
+
     return delta, ind, e, th_e
 
 
-# Initialize
-model = tf.keras.models.load_model('dynamic_model_EP21.h5')
-state = State(x=0.0, y=0.0, yaw=0.0, v=0.0)
-trgt_spd = 2 * ones((20, 1))
-shft_pos = 7 * ones((20, 1))
-trgt_acc = zeros((20, 1))
-steer_angle = zeros((20, 1))
-brake_prs = zeros((20, 1))
-veh_spd = zeros((20, 1))
-veh_yaw = zeros((20, 1))
-x_pos = []  # zeros(len(cx))
-y_pos = []  # zeros(len(cx))
+def calc_nearest_index(state, cx, cy, cyaw):
+    dx = [state.x - icx for icx in cx]
+    dy = [state.y - icy for icy in cy]
 
-while ind < len(cx):
-    delta, ind, e, th_e = lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e)
-    pth_e = th_e
-    pe = e
-    lat_error.append(e)
-    print('lateral error is ', e)
-    v = state.v
-    print("v is", v)
-    # print('Index is ', ind)
-    if abs(e) > 4:
-       print('too far from reference!\n')
-       break
-    a = PIDControl(target_v, v)
+    d = [idx ** 2 + idy ** 2 for (idx, idy) in zip(dx, dy)]
+    mind = min(d)
 
-    state = update(state, a, delta)
-    x = state.x
-    y = state.y
-    x_pos.append(x)
-    y_pos.append(y)
-    if abs(y_pos[-1]) > abs(cy[-1]):
-        break
-plt.plot(cx, cy, "-b")
+    ind = d.index(mind)
+    mind = math.sqrt(mind)
 
-for i in range(len(x_pos)):
-    plt.plot(x_pos[i], y_pos[i], ".r", markersize=1)
+    dxl = cx[ind] - state.x
+    dyl = cy[ind] - state.y
 
-plt.grid(True)
-plt.axis("equal")
-plt.xlabel("x[m]")
-plt.ylabel("y[m]")
-plt.show()
+    angle = pi_2_pi(cyaw[ind] - math.atan2(dyl, dxl))
+    if angle < 0:
+        mind *= -1
 
-for i in range(len(lat_error)):
-    plt.plot(lat_error, "-r")
-plt.show()
+    return ind, mind
+
+
+def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
+    T = 500.0  # max simulation time
+    goal_dis = 0.2
+    stop_speed = 0.05
+
+    state = State(x=-0.0, y=-0.0, yaw=0.0, v=0.0)
+
+    time = 0.0
+    x = [state.x]
+    y = [state.y]
+    yaw = [state.yaw]
+    v = [state.v]
+    t = [0.0]
+
+    e, e_th = 0.0, 0.0
+
+    while T >= time:
+        dl, target_ind, e, e_th = lqr_steering_control(
+            state, cx, cy, cyaw, ck, e, e_th)
+
+        ai = PIDControl(speed_profile[target_ind], state.v)
+        state = update(state, ai, dl)
+
+        if x[-1] < cx[-1]:  # abs(state.v) <= stop_speed:
+            break
+        time = time + dt
+
+        # check goal
+        dx = state.x - goal[0]
+        dy = state.y - goal[1]
+        if math.hypot(dx, dy) <= goal_dis:
+            print("Goal")
+            plt.cla()
+            # for stopping simulation with the esc key.
+            plt.gcf().canvas.mpl_connect('key_release_event',
+                    lambda event: [exit(0) if event.key == 'escape' else None])
+            plt.plot(cx, cy, "ob", label="course")
+            plt.plot(x, y, "-r", label="trajectory")
+            print(target_ind)
+            plt.plot(cx[target_ind], cy[target_ind], "xg", label="target")
+            plt.axis("equal")
+            plt.grid(True)
+            plt.title("speed[km/h]:" + str(round(state.v * 3.6, 2))
+                      + ",target index:" + str(target_ind))
+            plt.pause(0.01)
+            break
+
+        x.append(state.x)
+        y.append(state.y)
+        yaw.append(state.yaw)
+        v.append(state.v)
+        t.append(time)
+
+        if x[-1] < cx[-1] and show_animation:
+            plt.cla()
+            # for stopping simulation with the esc key.
+            plt.gcf().canvas.mpl_connect('key_release_event',
+                    lambda event: [exit(0) if event.key == 'escape' else None])
+            plt.plot(cx, cy, "ob", label="course")
+            plt.plot(x, y, "-r", label="trajectory")
+            print(target_ind)
+            plt.plot(cx[target_ind], cy[target_ind], "xg", label="target")
+            plt.axis("equal")
+            plt.grid(True)
+            plt.title("speed[km/h]:" + str(round(state.v * 3.6, 2))
+                      + ",target index:" + str(target_ind))
+            plt.pause(0.01)
+
+    return t, x, y, yaw, v
+
+
+def calc_speed_profile(cx, cy, cyaw, target_speed):
+    speed_profile = [target_speed] * len(cx)
+
+    direction = 1.0
+
+    # Set stop point
+    for i in range(len(cx) - 1):
+        dyaw = abs(cyaw[i + 1] - cyaw[i])
+        switch = math.pi / 4.0 <= dyaw < math.pi / 2.0
+
+        if switch:
+            direction *= -1
+
+        if direction != 1.0:
+            speed_profile[i] = - target_speed
+        else:
+            speed_profile[i] = target_speed
+
+        if switch:
+            speed_profile[i] = 0.0
+
+    speed_profile[-1] = 0.0
+
+    return speed_profile
+
+
+def main():
+    print("LQR steering control tracking start!!")
+    route = loadmat('RouteA4.3L5+A4.3L5+L0.2.mat')
+    route = route['Route']
+    cx = route[0]
+    cy = route[1]
+    cyaw = route[2]
+    ck = route[3]
+    index_end = np.argwhere(cx == 0)[1][0]
+    cx = cx[0:index_end]
+    cy = cy[0:index_end]
+    cyaw = cyaw[0:index_end]
+    goal = [cx[-1], cy[-1]]
+
+    target_speed = -2.0 / 3.6  # simulation parameter km/h -> m/s
+
+    sp = calc_speed_profile(cx, cy, cyaw, target_speed)
+
+    t, x, y, yaw, v = closed_loop_prediction(cx, cy, cyaw, ck, sp, goal)
+
+    if show_animation:  # pragma: no cover
+        plt.close()
+        plt.subplots(1)
+        # plt.plot(ax, ay, "xb", label="input")
+        plt.plot(cx, cy, "-r", label="spline")
+        plt.plot(x, y, "-g", label="tracking")
+        plt.grid(True)
+        plt.axis("equal")
+        plt.xlabel("x[m]")
+        plt.ylabel("y[m]")
+        plt.legend()
+
+        # plt.subplots(1)
+        # plt.plot(s, [np.rad2deg(iyaw) for iyaw in cyaw], "-r", label="yaw")
+        # plt.grid(True)
+        # plt.legend()
+        # plt.xlabel("line length[m]")
+        # plt.ylabel("yaw angle[deg]")
+        #
+        # plt.subplots(1)
+        # plt.plot(s, ck, "-r", label="curvature")
+        # plt.grid(True)
+        # plt.legend()
+        # plt.xlabel("line length[m]")
+        # plt.ylabel("curvature [1/m]")
+
+        plt.show()
+
+
+if __name__ == '__main__':
+    main()
