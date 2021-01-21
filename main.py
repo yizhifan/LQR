@@ -2,7 +2,7 @@
 
 Path tracking simulation with LQR steering control and PID speed control.
 
-author Atsushi Sakai (@Atsushi_twi)
+author FYZ 2021/1/21
 
 """
 import scipy.linalg as la
@@ -19,12 +19,11 @@ Q = np.eye(4)
 R = np.eye(1)
 
 # parameters
-dt = 0.1  # time tick[s]
+dt = 0.01  # time tick[s]
 L = 2.8  # Wheel base of the vehicle [m]
 max_steer = np.deg2rad(33.84)  # maximum steering angle[rad]
 
-show_animation = True
-#  show_animation = False
+show_animation = False
 
 
 class State:
@@ -83,7 +82,6 @@ def dlqr(A, B, Q, R):
     """Solve the discrete time lqr controller.
     x[k+1] = A x[k] + B u[k]
     cost = sum x[k].T*Q*x[k] + u[k].T*R*u[k]
-    # ref Bertsekas, p.151
     """
 
     # first, try to solve the ricatti equation
@@ -99,9 +97,6 @@ def dlqr(A, B, Q, R):
 
 def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
     ind, e = calc_nearest_index(state, cx, cy, cyaw)
-    ind += 1
-    if ind >= len(cx):
-        ind = len(cx) - 1
     k = ck[ind]
     v = state.v
     th_e = pi_2_pi(state.yaw - cyaw[ind])
@@ -142,6 +137,10 @@ def calc_nearest_index(state, cx, cy, cyaw):
     mind = min(d)
 
     ind = d.index(mind)
+    if mind <= 0.01:
+        ind += 1
+    if ind >= len(cx):
+        ind = len(cx) - 1
     mind = math.sqrt(mind)
 
     dxl = cx[ind] - state.x
@@ -207,14 +206,13 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
         v.append(state.v)
         t.append(time)
 
-        if x[-1] < cx[-1] and show_animation:
+        if target_ind < len(cx) and show_animation:
             plt.cla()
             # for stopping simulation with the esc key.
             plt.gcf().canvas.mpl_connect('key_release_event',
                     lambda event: [exit(0) if event.key == 'escape' else None])
             plt.plot(cx, cy, "ob", label="course")
             plt.plot(x, y, "-r", label="trajectory")
-            print(target_ind)
             plt.plot(cx[target_ind], cy[target_ind], "xg", label="target")
             plt.axis("equal")
             plt.grid(True)
@@ -271,7 +269,7 @@ def main():
 
     t, x, y, yaw, v = closed_loop_prediction(cx, cy, cyaw, ck, sp, goal)
 
-    if show_animation:  # pragma: no cover
+    if True:  # pragma: no cover
         plt.close()
         plt.subplots(1)
         # plt.plot(ax, ay, "xb", label="input")
