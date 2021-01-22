@@ -95,8 +95,8 @@ def dlqr(A, B, Q, R):
     return K, X, eigVals
 
 
-def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
-    ind, e = calc_nearest_index(state, cx, cy, cyaw)
+def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e, ind):
+    ind, e = calc_nearest_index(state, cx, cy, cyaw, ck, ind)
     k = ck[ind]
     v = state.v
     th_e = pi_2_pi(state.yaw - cyaw[ind])
@@ -129,28 +129,39 @@ def lqr_steering_control(state, cx, cy, cyaw, ck, pe, pth_e):
     return delta, ind, e, th_e
 
 
-def calc_nearest_index(state, cx, cy, cyaw):
-    dx = [state.x - icx for icx in cx]
-    dy = [state.y - icy for icy in cy]
+def calc_nearest_index(state, cx, cy, cyaw, ck, ind):
+    # dx = [state.x - icx for icx in cx]
+    # dy = [state.y - icy for icy in cy]
+    #
+    # d = [idx ** 2 + idy ** 2 for (idx, idy) in zip(dx, dy)]
+    # mind = min(d)
+    print('ind:', ind)
+    dx0 = state.x - cx[ind]
+    dy0 = state.y - cy[ind]
+    d0 = math.sqrt(dx0 ** 2 + dy0 ** 2)
+    d = d0
+    if ind < len(cx) - 1:
+        if ck[ind]*ck[ind+1] >= 0:
+            dx1 = state.x - cx[ind+1]
+            dy1 = state.y - cy[ind+1]
+            d1 = math.sqrt(dx1**2 + dy1**2)
+            # ind = d.index(mind)
+            if d0 >= d1:
+                ind += 1
+                d = d1
+        else:  # todo
+            if d0 >0.01 and cx[ind] - state.x > 0:
 
-    d = [idx ** 2 + idy ** 2 for (idx, idy) in zip(dx, dy)]
-    mind = min(d)
 
-    ind = d.index(mind)
-    if mind <= 0.01:
-        ind += 1
-    if ind >= len(cx):
-        ind = len(cx) - 1
-    mind = math.sqrt(mind)
 
     dxl = cx[ind] - state.x
     dyl = cy[ind] - state.y
 
     angle = pi_2_pi(cyaw[ind] - math.atan2(dyl, dxl))
     if angle < 0:
-        mind *= -1
+        d *= -1
 
-    return ind, mind
+    return ind, d
 
 
 def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
@@ -161,6 +172,7 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
     state = State(x=-0.0, y=-0.0, yaw=0.0, v=0.0)
 
     time = 0.0
+    ind = 0
     x = [state.x]
     y = [state.y]
     yaw = [state.yaw]
@@ -171,8 +183,8 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
 
     while T >= time:
         dl, target_ind, e, e_th = lqr_steering_control(
-            state, cx, cy, cyaw, ck, e, e_th)
-
+            state, cx, cy, cyaw, ck, e, e_th, ind)
+        ind = target_ind
         ai = PIDControl(speed_profile[target_ind], state.v)
         state = update(state, ai, dl)
 
@@ -183,7 +195,7 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
         # check goal
         dx = state.x - goal[0]
         dy = state.y - goal[1]
-        if math.hypot(dx, dy) <= goal_dis:
+        if abs(dx) <= 0.1:  # math.hypot(dx, dy) <= goal_dis:
             print("Goal")
             plt.cla()
             # for stopping simulation with the esc key.
