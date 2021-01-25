@@ -141,18 +141,15 @@ def calc_nearest_index(state, cx, cy, cyaw, ck, ind):
     d0 = math.sqrt(dx0 ** 2 + dy0 ** 2)
     d = d0
     if ind < len(cx) - 1:
-        if ck[ind]*ck[ind+1] >= 0:
-            dx1 = state.x - cx[ind+1]
-            dy1 = state.y - cy[ind+1]
-            d1 = math.sqrt(dx1**2 + dy1**2)
-            # ind = d.index(mind)
-            if d0 >= d1:
-                ind += 1
-                d = d1
-        else:  # todo
-            if d0 >0.01 and cx[ind] - state.x > 0:
-
-
+        dx1 = state.x - cx[ind + 1]
+        dy1 = state.y - cy[ind + 1]
+        d1 = math.sqrt(dx1 ** 2 + dy1 ** 2)
+        if ck[ind]*ck[ind+1] >= 0 and d0 > 0.15 and cx[ind] - state.x > 0:
+            ind += 1
+            d = d1
+        elif ck[ind]*ck[ind+1] < 0 and d0 > 0.02 and cx[ind] - state.x > 0:
+            ind += 1
+            d = d1
 
     dxl = cx[ind] - state.x
     dyl = cy[ind] - state.y
@@ -292,21 +289,6 @@ def main():
         plt.xlabel("x[m]")
         plt.ylabel("y[m]")
         plt.legend()
-
-        # plt.subplots(1)
-        # plt.plot(s, [np.rad2deg(iyaw) for iyaw in cyaw], "-r", label="yaw")
-        # plt.grid(True)
-        # plt.legend()
-        # plt.xlabel("line length[m]")
-        # plt.ylabel("yaw angle[deg]")
-        #
-        # plt.subplots(1)
-        # plt.plot(s, ck, "-r", label="curvature")
-        # plt.grid(True)
-        # plt.legend()
-        # plt.xlabel("line length[m]")
-        # plt.ylabel("curvature [1/m]")
-
         plt.show()
 
 
