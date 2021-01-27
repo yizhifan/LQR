@@ -11,7 +11,6 @@ import matplotlib.pyplot as plt
 import math
 import numpy as np
 
-
 Kp = 1.0  # speed proportional gain
 
 # LQR parameter
@@ -22,18 +21,18 @@ R = np.eye(1)
 dt = 0.01  # time tick[s]
 L = 2.8  # Wheel base of the vehicle [m]
 max_steer = np.deg2rad(33.84)  # maximum steering angle[rad]
-
+max_rate = 5.64  # degree
 show_animation = False
 
 
 class State:
 
-    def __init__(self, x=0.0, y=0.0, yaw=0.0, v=0.0):
+    def __init__(self, x=0.0, y=0.0, yaw=0.0, v=0.0, f=0.0):
         self.x = x
         self.y = y
         self.yaw = yaw
         self.v = v
-
+        self.f = f
 
 def update(state, a, delta):
 
@@ -41,12 +40,17 @@ def update(state, a, delta):
         delta = max_steer
     if delta <= - max_steer:
         delta = - max_steer
+    if delta - state.f >= np.deg2rad(0.3525):
+        state.f = state.f + np.deg2rad(0.3525)
+    elif delta - state.f <= -np.deg2rad(0.3525):
+        state.f = state.f - np.deg2rad(0.3525)
+    else:
+        state.f = delta
 
     state.x = state.x + state.v * math.cos(state.yaw) * dt
     state.y = state.y + state.v * math.sin(state.yaw) * dt
-    state.yaw = state.yaw + state.v / L * math.tan(delta) * dt
+    state.yaw = state.yaw + state.v / L * math.tan(state.f) * dt
     state.v = state.v + a * dt
-
     return state
 
 
@@ -65,7 +69,7 @@ def solve_DARE(A, B, Q, R):
     solve a discrete time_Algebraic Riccati equation (DARE)
     """
     X = Q
-    maxiter = 150
+    maxiter = 1
     eps = 0.01
 
     for i in range(maxiter):
@@ -74,7 +78,6 @@ def solve_DARE(A, B, Q, R):
         if (abs(Xn - X)).max() < eps:
             break
         X = Xn
-
     return Xn
 
 
@@ -144,12 +147,15 @@ def calc_nearest_index(state, cx, cy, cyaw, ck, ind):
         dx1 = state.x - cx[ind + 1]
         dy1 = state.y - cy[ind + 1]
         d1 = math.sqrt(dx1 ** 2 + dy1 ** 2)
-        if ck[ind]*ck[ind+1] >= 0 and d0 > 0.15 and cx[ind] - state.x > 0:
+        if ck[ind]*ck[ind+2] >= 0 and d0 > 0.1 and cx[ind] - state.x > 0:
             ind += 1
             d = d1
-        elif ck[ind]*ck[ind+1] < 0 and d0 > 0.02 and cx[ind] - state.x > 0:
-            ind += 1
-            d = d1
+        elif ck[ind]*ck[ind+2] < 0 and d0 < 0.05:  # and cx[ind] - state.x > 0:
+            ind += 2
+            dx2 = state.x - cx[ind + 2]
+            dy2 = state.y - cy[ind + 2]
+            d2 = math.sqrt(dx2 ** 2 + dy2 ** 2)
+            d = d2
 
     dxl = cx[ind] - state.x
     dyl = cy[ind] - state.y
@@ -175,7 +181,8 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
     yaw = [state.yaw]
     v = [state.v]
     t = [0.0]
-
+    fi = [0.0]
+    f = [0.0]
     e, e_th = 0.0, 0.0
 
     while T >= time:
@@ -183,8 +190,13 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
             state, cx, cy, cyaw, ck, e, e_th, ind)
         ind = target_ind
         ai = PIDControl(speed_profile[target_ind], state.v)
+        if np.rad2deg(dl) - fi[-1] > max_rate:
+            dl = np.deg2rad(fi[-1] + max_rate)
+        elif np.rad2deg(dl) - fi[-1] < -max_rate:
+            dl = np.deg2rad(fi[-1] - max_rate)
+        fi.append(np.rad2deg(dl))
         state = update(state, ai, dl)
-
+        f.append(state.f)
         if x[-1] < cx[-1]:  # abs(state.v) <= stop_speed:
             break
         time = time + dt
@@ -207,6 +219,12 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
             plt.title("speed[km/h]:" + str(round(state.v * 3.6, 2))
                       + ",target index:" + str(target_ind))
             plt.pause(0.01)
+            plt.close()
+            plt.subplot(211)
+            plt.plot(fi)
+            plt.subplot(212)
+            plt.plot(f)
+            plt.show()
             break
 
         x.append(state.x)
@@ -228,7 +246,6 @@ def closed_loop_prediction(cx, cy, cyaw, ck, speed_profile, goal):
             plt.title("speed[km/h]:" + str(round(state.v * 3.6, 2))
                       + ",target index:" + str(target_ind))
             plt.pause(0.01)
-
     return t, x, y, yaw, v
 
 
@@ -272,7 +289,7 @@ def main():
     cyaw = cyaw[0:index_end]
     goal = [cx[-1], cy[-1]]
 
-    target_speed = -2.0 / 3.6  # simulation parameter km/h -> m/s
+    target_speed = -1.0 / 3.6  # simulation parameter km/h -> m/s
 
     sp = calc_speed_profile(cx, cy, cyaw, target_speed)
 
